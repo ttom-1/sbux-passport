@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#00704A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SBUXパスポート">
+<title>マイストアパスポート｜スターバックス</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green:  #00704A;
+  --dark:   #1E3932;
+  --gold:   #CBA258;
+  --light:  #D4E9E2;
+  --bg:     #F2F0EB;
+  --white:  #FFFFFF;
+  --text:   #1a1a1a;
+  --muted:  #767676;
+  --border: #E0DEDD;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+html, body {
+  height: 100%; height: 100dvh;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 14px; color: var(--text); background: var(--bg);
+  overflow: hidden;
+  /* iPhoneノッチ対応 */
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bot);
+}
+
+/* ── HEADER ──────────────────────────────────────────── */
+header {
+  height: 56px; background: var(--dark);
+  display: flex; align-items: center; padding: 0 16px; gap: 10px;
+  flex-shrink: 0; position: relative; z-index: 1000;
+}
+.h-logo { display: flex; align-items: center; gap: 8px; }
+.h-logo svg { width: 32px; height: 32px; }
+.h-title { font-size: 13px; font-weight: 700; color: var(--white); line-height: 1.2; }
+.h-sub   { font-size: 9px; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .06em; }
+.h-right { margin-left: auto; text-align: right; }
+.h-stamp { font-size: 11px; color: rgba(255,255,255,.6); }
+.h-stamp em { font-style: normal; font-size: 16px; font-weight: 700; color: #6ee7b7; }
+
+/* ── LAYOUT ──────────────────────────────────────────── */
+#root { display: flex; flex-direction: column; height: calc(100% - 56px); }
+
+/* ── MAP ─────────────────────────────────────────────── */
+#map-wrap { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; z-index: 1; }
+.leaflet-control-attribution { font-size: 9px !important; }
+
+/* ── SEARCH BAR（地図の上に重ねる）──────────────────── */
+#search-bar {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 500;
+  display: flex; gap: 0; box-shadow: 0 2px 12px rgba(0,0,0,.2);
+}
+#s-in {
+  flex: 1; padding: 11px 14px; border: none; border-radius: 8px 0 0 8px;
+  font-size: 14px; font-family: 'Noto Sans JP', sans-serif;
+  color: var(--text); outline: none; background: var(--white);
+}
+#s-go {
+  padding: 11px 16px; background: var(--green); color: var(--white);
+  border: none; border-radius: 0 8px 8px 0; font-size: 14px; cursor: pointer;
+}
+#s-go:active { background: #005a3a; }
+
+/* ── FAB（現在地ボタン）──────────────────────────────── */
+#fab-loc {
+  position: absolute; bottom: 180px; right: 14px; z-index: 500;
+  width: 48px; height: 48px; border-radius: 50%; background: var(--white);
+  border: none; box-shadow: 0 2px 12px rgba(0,0,0,.2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+#fab-loc svg { width: 22px; height: 22px; fill: var(--green); }
+#fab-loc:active { background: var(--light); }
+
+/* ── LEGEND ──────────────────────────────────────────── */
+#legend {
+  position: absolute; top: 62px; right: 10px; z-index: 500;
+  background: var(--white); border-radius: 8px; padding: 8px 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12); font-size: 11px;
+}
+.leg { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.leg:last-child { margin-bottom: 0; }
+.leg svg { width: 12px; height: 15px; display: block; }
+.leg-me { width: 10px; height: 10px; border-radius: 50%; background: #3B82F6; border: 2px solid white; box-shadow: 0 0 0 1.5px #3B82F6; }
+
+/* ── BOTTOM SHEET ────────────────────────────────────── */
+#bottom-sheet {
+  background: var(--white); border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.12);
+  flex-shrink: 0; max-height: 55vh; display: flex; flex-direction: column;
+  position: relative; z-index: 800;
+}
+.sheet-handle-area { padding: 10px; text-align: center; cursor: pointer; }
+.sheet-handle { width: 36px; height: 4px; background: #ddd; border-radius: 2px; margin: 0 auto; }
+
+/* filter row */
+.filter-row { display: flex; gap: 6px; padding: 0 12px 10px; overflow-x: auto; }
+.filter-row::-webkit-scrollbar { display: none; }
+.pill {
+  flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border); background: var(--white); color: var(--muted);
+  cursor: pointer; font-family: 'Noto Sans JP', sans-serif; white-space: nowrap;
+  transition: all .15s;
+}
+.pill.on { background: var(--green); border-color: var(--green); color: var(--white); }
+
+/* progress */
+.prog-row { display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; }
+.prog-track { flex: 1; height: 4px; background: #eee; border-radius: 2px; overflow: hidden; }
+.prog-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width .5s; }
+.prog-txt { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.prog-txt em { font-style: normal; font-weight: 700; color: var(--green); }
+
+/* list */
+#list { overflow-y: auto; flex: 1; }
+#list::-webkit-scrollbar { width: 3px; }
+#list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.s-card {
+  padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
+  display: flex; align-items: center; gap: 10px; transition: background .12s;
+}
+.s-card:active { background: #f0f9f4; }
+.s-card.sel { background: #f0f9f4; border-left: 3px solid var(--green); }
+.card-pin svg { width: 14px; height: 18px; display: block; flex-shrink: 0; }
+.card-body { flex: 1; min-width: 0; }
+.card-name { font-size: 13px; font-weight: 700; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.card-dist { font-size: 10px; color: var(--green); font-weight: 500; }
+.ctag { font-size: 10px; padding: 1px 6px; border-radius: 2px; margin-left: 4px; }
+.ctag.st { background: #d4ede3; color: var(--dark); font-weight: 700; }
+.empty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.8; }
+
+/* ── STORE DETAIL DRAWER（下から出てくる） ───────────── */
+#drawer {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 1200;
+  background: var(--white); border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 32px rgba(0,0,0,.18); padding: 0 20px 20px;
+  padding-bottom: calc(20px + var(--safe-bot));
+  transform: translateY(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+#drawer.open { transform: translateY(0); }
+.drw-handle { text-align: center; padding: 10px; }
+.drw-knob { width: 36px; height: 4px; background: #ddd; border-radius: 2px; display: inline-block; }
+.drw-name { font-size: 16px; font-weight: 700; color: var(--dark); margin-bottom: 3px; }
+.drw-pref { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.drw-addr { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.drw-dist { font-size: 11px; color: var(--green); font-weight: 500; margin-top: 4px; }
+.drw-hours { font-size: 12px; color: var(--muted); margin-top: 6px; }
+hr.dv { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.stamp-row { display: flex; align-items: center; gap: 14px; }
+.stamp-lbl { font-size: 14px; font-weight: 500; flex: 1; }
+.toggle { width: 52px; height: 30px; background: #ccc; border-radius: 15px; position: relative; cursor: pointer; transition: background .25s; flex-shrink: 0; }
+.toggle.on { background: var(--green); }
+.knob { width: 26px; height: 26px; background: var(--white); border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: left .25s; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.toggle.on .knob { left: 24px; }
+.drw-close {
+  width: 100%; margin-top: 16px; padding: 13px; background: #f0f0f0;
+  border: none; border-radius: 10px; font-size: 14px; color: var(--muted);
+  font-family: 'Noto Sans JP', sans-serif; cursor: pointer;
+}
+.drw-close:active { background: #e4e4e4; }
+
+/* ── LOADING ─────────────────────────────────────────── */
+#loading {
+  position: fixed; inset: 0; background: rgba(30,57,50,.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 9999; gap: 16px;
+}
+.spin { width: 44px; height: 44px; border: 3px solid rgba(255,255,255,.2); border-top-color: #6ee7b7; border-radius: 50%; animation: sp .75s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+#loading p { font-size: 14px; color: rgba(255,255,255,.8); font-weight: 500; }
+#loading small { font-size: 11px; color: rgba(255,255,255,.4); }
+
+/* ── TOAST ───────────────────────────────────────────── */
+#toast {
+  position: fixed; bottom: calc(60px + var(--safe-bot)); left: 50%; transform: translateX(-50%);
+  background: var(--dark); color: var(--white); padding: 10px 20px;
+  border-radius: 20px; font-size: 13px; font-weight: 500;
+  opacity: 0; transition: opacity .3s; z-index: 9998; pointer-events: none; white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+
+/* ── ERROR BANNER ────────────────────────────────────── */
+#err-banner {
+  position: fixed; top: calc(56px + var(--safe-top)); left: 0; right: 0; z-index: 2000;
+  background: #c0392b; color: white; padding: 10px 16px; font-size: 12px;
+  display: none; text-align: center; line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spin"></div>
+  <p id="load-msg">データを読み込み中...</p>
+  <small>初回は少し時間がかかります</small>
+</div>
+
+<div id="err-banner"></div>
+
+<header>
+  <div class="h-logo">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="48" fill="#00704A"/>
+      <circle cx="50" cy="50" r="40" fill="none" stroke="white" stroke-width="2"/>
+      <circle cx="50" cy="50" r="22" fill="none" stroke="white" stroke-width="2"/>
+      <text x="50" y="58" text-anchor="middle" fill="white" font-size="26" font-family="Georgia,serif" font-weight="bold">★</text>
+    </svg>
+    <div>
+      <div class="h-title">マイストアパスポート</div>
+      <div class="h-sub">Starbucks Coffee Japan</div>
+    </div>
+  </div>
+  <div class="h-right">
+    <div class="h-stamp"><em id="hdr-n">0</em> / <span id="hdr-t">0</span></div>
+    <div style="font-size:10px;color:rgba(255,255,255,.4);">店舗スタンプ</div>
+  </div>
+</header>
+
+<div id="root">
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <div id="search-bar">
+      <input id="s-in" type="search" placeholder="店舗名・住所で検索..." />
+      <button id="s-go">🔍</button>
+    </div>
+
+    <button id="fab-loc" title="現在地">
+      <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
+    </button>
+
+    <div id="legend">
+      <div class="leg">
+        <svg viewBox="0 0 14 18"><path d="M7 0C3.69 0 1 2.69 1 6c0 5.25 6 12 6 12S13 11.25 13 6C13 2.69 10.31 0 7 0z" fill="#00704A" stroke="#004D31" stroke-width=".8"/><circle cx="7" cy="6" r="2.5" fill="white"/></svg>
+        取得済み
+      </div>
+      <div class="leg">
+        <svg viewBox="0 0 14 18"><path d="M7 0C3.69 0 1 2.69 1 6c0 5.25 6 12 6 12S13 11.25 13 6C13 2.69 10.31 0 7 0z" fill="white" stroke="#aaa" stroke-width="1.2"/><circle cx="7" cy="6" r="2.5" fill="#ddd"/></svg>
+        未取得
+      </div>
+      <div class="leg"><div class="leg-me"></div>現在地</div>
+    </div>
+  </div>
+
+  <div id="bottom-sheet">
+    <div class="sheet-handle-area" id="sheet-handle">
+      <div class="sheet-handle"></div>
+    </div>
+    <div class="filter-row">
+      <button class="pill on" data-f="all">すべて</button>
+      <button class="pill" data-f="near">近く(1km)</button>
+      <button class="pill" data-f="stamped">取得済み</button>
+      <button class="pill" data-f="unstamped">未取得</button>
+    </div>
+    <div class="prog-row">
+      <div class="prog-track"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+      <div class="prog-txt"><em id="prog-n">0</em> / <span id="prog-t">0</span> 取得</div>
+    </div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<!-- 店舗詳細ドロワー -->
+<div id="drawer">
+  <div class="drw-handle"><span class="drw-knob"></span></div>
+  <div class="drw-name" id="d-name"></div>
+  <div class="drw-pref" id="d-pref"></div>
+  <div class="drw-addr" id="d-addr"></div>
+  <div class="drw-dist" id="d-dist"></div>
+  <div class="drw-hours" id="d-hours"></div>
+  <hr class="dv">
+  <div class="stamp-row">
+    <span class="stamp-lbl" id="d-lbl">スタンプ未取得</span>
+    <div class="toggle" id="d-tog"><div class="knob"></div></div>
+  </div>
+  <button class="drw-close" id="drw-close">閉じる</button>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ── 設定 ─────────────────────────────────────────────── */
+// stores.json の URL（GitHub Pages に配置後は実際のURLに変更）
+const STORES_JSON_URL = "./stores.json";
+
+/* ── 状態 ─────────────────────────────────────────────── */
+let map, meLayer = null, userPos = null;
+let stores  = [];
+let selId   = null, filter = "all", query = "";
+const STAMPS = JSON.parse(localStorage.getItem("sbux_stamps_v2") || "{}");
+
+/* ── 地図初期化 ──────────────────────────────────────── */
+map = L.map("map", { zoomControl: false }).setView([35.6812, 139.7671], 12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  maxZoom: 19,
+}).addTo(map);
+L.control.zoom({ position: "topright" }).addTo(map);
+
+/* ── 起動 ────────────────────────────────────────────── */
+window.addEventListener("load", async () => {
+  // Service Worker 登録（HTTPS または localhost のみ有効）
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+
+  // 位置情報取得（並行して store.json も取得）
+  const [, storeData] = await Promise.allSettled([
+    getLocation(),
+    loadStores(),
+  ]);
+
+  if (storeData.status === "fulfilled" && storeData.value) {
+    processStores(storeData.value);
+  } else {
+    showErr("店舗データの読み込みに失敗しました。stores.json を確認してください。");
+  }
+  showLoad(false);
+});
+
+/* ── stores.json 読み込み ─────────────────────────────── */
+async function loadStores() {
+  setMsg("店舗データを読み込み中...");
+  const res = await fetch(STORES_JSON_URL + "?v=" + Date.now());
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return await res.json();
+}
+
+function processStores(data) {
+  const list = data.stores || [];
+  setMsg(`マーカーを配置中... (${list.length} 件)`);
+
+  list.forEach(s => {
+    if (s.lat == null || s.lng == null) return; // 座標なしはスキップ
+    s.stamped = STAMPS[s.id] ?? s.stamped ?? false;
+    s.dist    = userPos ? hav(userPos, { lat: s.lat, lng: s.lng }) : null;
+    s.marker  = makeMarker(s);
+    stores.push(s);
+  });
+
+  // 距離順ソート
+  stores.sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
+
+  // 現在地がある場合はその周辺に移動
+  if (userPos && stores.length) {
+    map.setView([userPos.lat, userPos.lng], 14);
+  } else if (stores.length) {
+    const first = stores[0];
+    map.setView([first.lat, first.lng], 12);
+  }
+
+  renderAll();
+  toast(`${stores.length} 店舗を読み込みました`);
+}
+
+/* ── 位置情報 ─────────────────────────────────────────── */
+async function getLocation() {
+  setMsg("現在地を取得中...");
+  return new Promise((res) => {
+    if (!navigator.geolocation) { res(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      p => {
+        userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+        placeMe(userPos);
+        res(userPos);
+      },
+      () => res(null),
+      { timeout: 8000 }
+    );
+  });
+}
+
+function placeMe(pos) {
+  if (meLayer) map.removeLayer(meLayer);
+  meLayer = L.circleMarker([pos.lat, pos.lng], {
+    radius: 9, fillColor: "#3B82F6", fillOpacity: 1, color: "white", weight: 2.5,
+  }).addTo(map).bindTooltip("現在地");
+}
+
+/* ── マーカー ─────────────────────────────────────────── */
+function pinSVG(stamped) {
+  const fill   = stamped ? "#00704A" : "#FFFFFF";
+  const stroke = stamped ? "#004D31" : "#AAAAAA";
+  const dot    = stamped ? "#FFFFFF" : "#CCCCCC";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">
+    <path d="M13 1C7.48 1 3 5.48 3 11c0 8.5 10 22 10 22S23 19.5 23 11C23 5.48 18.52 1 13 1z"
+      fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
+    <circle cx="13" cy="11" r="4" fill="${dot}"/>
+  </svg>`;
+}
+
+function divIcon(stamped) {
+  return L.divIcon({
+    html: pinSVG(stamped), className: "",
+    iconSize: [26, 34], iconAnchor: [13, 34], tooltipAnchor: [0, -36],
+  });
+}
+
+function makeMarker(s) {
+  const m = L.marker([s.lat, s.lng], { icon: divIcon(s.stamped) })
+    .addTo(map)
+    .bindTooltip(s.name, { direction: "top", offset: [0, -18], opacity: .9 });
+  m.on("click", () => selectStore(s.id));
+  return m;
+}
+
+function refreshIcon(s) { s.marker.setIcon(divIcon(s.stamped)); }
+
+/* ── 店舗選択 ─────────────────────────────────────────── */
+function selectStore(id) {
+  selId = id;
+  const s = stores.find(x => x.id === id); if (!s) return;
+  map.setView([s.lat, s.lng], Math.max(map.getZoom(), 15));
+
+  document.getElementById("d-name").textContent  = s.name;
+  document.getElementById("d-pref").textContent  = s.prefecture || "";
+  document.getElementById("d-addr").textContent  = s.address || "住所情報なし";
+  document.getElementById("d-dist").textContent  = s.dist != null ? `📍 現在地から約 ${fmtD(s.dist)}` : "";
+  document.getElementById("d-hours").textContent = s.hours ? `🕐 ${s.hours}` : "";
+
+  const tog = document.getElementById("d-tog");
+  tog.className = "toggle" + (s.stamped ? " on" : "");
+  document.getElementById("d-lbl").textContent = s.stamped ? "✅ スタンプ取得済み" : "スタンプ未取得";
+
+  document.getElementById("drawer").classList.add("open");
+  renderList();
+}
+
+function closeDrawer() {
+  document.getElementById("drawer").classList.remove("open");
+  selId = null; renderList();
+}
+
+function toggleStamp() {
+  const s = stores.find(x => x.id === selId); if (!s) return;
+  s.stamped = !s.stamped;
+  STAMPS[s.id] = s.stamped;
+  localStorage.setItem("sbux_stamps_v2", JSON.stringify(STAMPS));
+  refreshIcon(s);
+  const tog = document.getElementById("d-tog");
+  tog.className = "toggle" + (s.stamped ? " on" : "");
+  document.getElementById("d-lbl").textContent = s.stamped ? "✅ スタンプ取得済み" : "スタンプ未取得";
+  toast(s.stamped ? "⭐ スタンプを取得しました！" : "スタンプを取り消しました");
+  renderAll();
+}
+
+/* ── リスト ──────────────────────────────────────────── */
+function getFiltered() {
+  return stores.filter(s => {
+    if (filter === "stamped"   && !s.stamped) return false;
+    if (filter === "unstamped" && s.stamped)  return false;
+    if (filter === "near" && (s.dist == null || s.dist > 1000)) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      if (!s.name.includes(query) && !(s.address || "").includes(query) && !(s.prefecture || "").includes(query)) return false;
+    }
+    return true;
+  });
+}
+
+function renderList() {
+  const el = document.getElementById("list");
+  const list = getFiltered();
+  if (!list.length) {
+    el.innerHTML = '<div class="empty">該当する店舗が見つかりませんでした</div>';
+    return;
+  }
+  el.innerHTML = list.map(s => {
+    const fill   = s.stamped ? "#00704A" : "white";
+    const stroke = s.stamped ? "#004D31" : "#aaa";
+    const dot    = s.stamped ? "white" : "#ddd";
+    return `<div class="s-card${s.id === selId ? " sel" : ""}" data-id="${s.id}">
+      <div class="card-pin">
+        <svg viewBox="0 0 14 18">
+          <path d="M7 0C3.69 0 1 2.69 1 6c0 5.25 6 12 6 12S13 11.25 13 6C13 2.69 10.31 0 7 0z"
+            fill="${fill}" stroke="${stroke}" stroke-width="${s.stamped ? ".8" : "1.2"}"/>
+          <circle cx="7" cy="6" r="2.5" fill="${dot}"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="card-name">${s.name}${s.stamped ? '<span class="ctag st">済</span>' : ''}</div>
+        <div class="card-sub">${s.prefecture || ""} ${s.address || ""}</div>
+        ${s.dist != null ? `<div class="card-dist">📍 ${fmtD(s.dist)}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".s-card").forEach(c =>
+    c.addEventListener("click", () => selectStore(c.dataset.id))
+  );
+}
+
+function renderStats() {
+  const n = stores.filter(s => s.stamped).length;
+  const t = stores.length;
+  const p = t ? Math.round(n / t * 100) : 0;
+  document.getElementById("prog-n").textContent = n;
+  document.getElementById("prog-t").textContent = t;
+  document.getElementById("prog-fill").style.width = p + "%";
+  document.getElementById("hdr-n").textContent = n;
+  document.getElementById("hdr-t").textContent = t;
+}
+
+function renderAll() { renderStats(); renderList(); }
+
+/* ── UI イベント ─────────────────────────────────────── */
+document.getElementById("s-go").addEventListener("click", doSearch);
+document.getElementById("s-in").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+function doSearch() {
+  query = document.getElementById("s-in").value.trim();
+  renderList();
+  const hit = getFiltered()[0];
+  if (hit) map.setView([hit.lat, hit.lng], 15);
+}
+
+document.getElementById("fab-loc").addEventListener("click", () => {
+  if (userPos) { map.setView([userPos.lat, userPos.lng], 15); return; }
+  navigator.geolocation?.getCurrentPosition(p => {
+    userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+    placeMe(userPos);
+    map.setView([userPos.lat, userPos.lng], 15);
+    stores.forEach(s => { s.dist = hav(userPos, { lat: s.lat, lng: s.lng }); });
+    stores.sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
+    renderAll();
+  }, () => toast("位置情報を取得できませんでした"));
+});
+
+document.querySelectorAll(".pill").forEach(p => p.addEventListener("click", () => {
+  document.querySelectorAll(".pill").forEach(x => x.classList.remove("on"));
+  p.classList.add("on"); filter = p.dataset.f; renderList();
+}));
+
+document.getElementById("drw-close").addEventListener("click", closeDrawer);
+document.getElementById("d-tog").addEventListener("click", toggleStamp);
+
+/* ── ユーティリティ ──────────────────────────────────── */
+function hav(a, b) {
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const dL = r(b.lat - a.lat), dG = r(b.lng - a.lng);
+  const x = Math.sin(dL/2)**2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dG/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+function fmtD(m) { return m < 1000 ? Math.round(m) + "m" : (m/1000).toFixed(1) + "km"; }
+
+let tTmr;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg; el.classList.add("show");
+  clearTimeout(tTmr); tTmr = setTimeout(() => el.classList.remove("show"), 2800);
+}
+function showLoad(v) { document.getElementById("loading").style.display = v ? "flex" : "none"; }
+function setMsg(m)   { document.getElementById("load-msg").textContent = m; }
+function showErr(msg) {
+  const b = document.getElementById("err-banner");
+  b.textContent = msg; b.style.display = "block";
+}
+</script>
+</body>
+</html>
