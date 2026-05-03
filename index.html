@@ -49,7 +49,16 @@ header {
 .h-logo svg { width: 32px; height: 32px; }
 .h-title { font-size: 13px; font-weight: 700; color: var(--white); line-height: 1.2; }
 .h-sub   { font-size: 9px; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .06em; }
-.h-right { margin-left: auto; text-align: right; }
+.h-right { margin-left: auto; text-align: right; display: flex; align-items: center; gap: 10px; }
+#sync-btn {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(255,255,255,.15); color: white;
+  border: 1px solid rgba(255,255,255,.3); border-radius: 16px;
+  padding: 5px 12px; font-size: 11px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; transition: background .15s;
+}
+#sync-btn:hover { background: rgba(255,255,255,.25); }
+#sync-btn.loaded { background: var(--green); border-color: var(--green); }
 .h-stamp { font-size: 11px; color: rgba(255,255,255,.6); }
 .h-stamp em { font-style: normal; font-size: 16px; font-weight: 700; color: #6ee7b7; }
 
@@ -230,6 +239,11 @@ hr.dv { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
   <div class="h-right">
     <div class="h-stamp"><em id="hdr-n">0</em> / <span id="hdr-t">0</span></div>
     <div style="font-size:10px;color:rgba(255,255,255,.4);">店舗スタンプ</div>
+    <!-- stamps.json 読み込みボタン -->
+    <label id="sync-btn" title="stamps.jsonを読み込む">
+      🔄 同期
+      <input type="file" id="stamps-file" accept=".json" style="display:none">
+    </label>
   </div>
 </header>
 
@@ -306,6 +320,8 @@ let map, meLayer = null, userPos = null;
 let stores  = [];
 let selId   = null, filter = "all", query = "";
 const STAMPS = JSON.parse(localStorage.getItem("sbux_stamps_v2") || "{}");
+// マイストアパスポートから同期したスタンプID集合
+let syncedStampIds = new Set(JSON.parse(localStorage.getItem("sbux_synced_ids") || "[]"));
 
 /* ── 地図初期化 ──────────────────────────────────────── */
 map = L.map("map", { zoomControl: false }).setView([35.6812, 139.7671], 12);
@@ -350,7 +366,7 @@ function processStores(data) {
 
   list.forEach(s => {
     if (s.lat == null || s.lng == null) return; // 座標なしはスキップ
-    s.stamped = STAMPS[s.id] ?? s.stamped ?? false;
+    s.stamped = syncedStampIds.has(String(s.id)) || STAMPS[s.id] || false;
     s.dist    = userPos ? hav(userPos, { lat: s.lat, lng: s.lng }) : null;
     s.marker  = makeMarker(s);
     stores.push(s);
@@ -546,6 +562,50 @@ document.querySelectorAll(".pill").forEach(p => p.addEventListener("click", () =
   document.querySelectorAll(".pill").forEach(x => x.classList.remove("on"));
   p.classList.add("on"); filter = p.dataset.f; renderList();
 }));
+
+/* ── stamps.json ファイル読み込み ──────────────────────── */
+document.getElementById("stamps-file").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      const ids = data.stamp_ids || [];
+      if (!ids.length) { toast("スタンプIDが見つかりませんでした"); return; }
+
+      // localStorageに保存
+      syncedStampIds = new Set(ids.map(String));
+      localStorage.setItem("sbux_synced_ids", JSON.stringify([...syncedStampIds]));
+
+      // 全店舗のstamped状態を更新
+      stores.forEach(s => {
+        const stamped = syncedStampIds.has(String(s.id));
+        s.stamped = stamped;
+        refreshIcon(s);
+      });
+
+      // 同期ボタンの見た目を変更
+      document.getElementById("sync-btn").classList.add("loaded");
+      document.getElementById("sync-btn").textContent = `✅ ${ids.length}店舗同期済み`;
+
+      renderAll();
+      toast(`✅ ${ids.length} 店舗のスタンプを同期しました（${data.updated?.slice(0,10) || ""}）`);
+    } catch (err) {
+      toast("stamps.json の読み込みに失敗しました");
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+  // 同じファイルを再選択できるようリセット
+  e.target.value = "";
+});
+
+// 起動時に同期済みデータがあればボタン表示を更新
+if (syncedStampIds.size > 0) {
+  document.getElementById("sync-btn").classList.add("loaded");
+  document.getElementById("sync-btn").textContent = `✅ ${syncedStampIds.size}店舗同期済み`;
+}
 
 document.getElementById("drw-close").addEventListener("click", closeDrawer);
 document.getElementById("d-tog").addEventListener("click", toggleStamp);
