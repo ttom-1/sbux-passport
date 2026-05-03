@@ -412,11 +412,13 @@ function placeMe(pos) {
 }
 
 /* ── マーカー ─────────────────────────────────────────── */
-function pinSVG(stamped) {
+function pinSVG(stamped, selected) {
   const fill   = stamped ? "#00704A" : "#FFFFFF";
   const stroke = stamped ? "#004D31" : "#AAAAAA";
   const dot    = stamped ? "#FFFFFF" : "#CCCCCC";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">
+  const w = selected ? 36 : 26;
+  const h = selected ? 47 : 34;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 26 34">
     <path d="M13 1C7.48 1 3 5.48 3 11c0 8.5 10 22 10 22S23 19.5 23 11C23 5.48 18.52 1 13 1z"
       fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
     <circle cx="13" cy="11" r="4" fill="${dot}"/>
@@ -428,7 +430,7 @@ function divIcon(stamped, selected) {
   const h = selected ? 47 : 34;
   const a = selected ? 18 : 13;
   return L.divIcon({
-    html: pinSVG(stamped), className: "",
+    html: pinSVG(stamped, selected), className: "",
     iconSize: [w, h], iconAnchor: [a, h], tooltipAnchor: [0, -h],
   });
 }
