@@ -72,7 +72,7 @@ header {
 
 /* ── SEARCH BAR（地図の上に重ねる）──────────────────── */
 #search-bar {
-  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 500;
+  position: absolute; top: 10px; left: 10px; right: 80px; z-index: 500;
   display: flex; gap: 0; box-shadow: 0 2px 12px rgba(0,0,0,.2);
 }
 #s-in {
@@ -88,19 +88,21 @@ header {
 
 /* ── FAB（現在地ボタン）──────────────────────────────── */
 #fab-loc {
-  position: absolute; bottom: 220px; right: 14px; z-index: 500;
+  position: fixed; right: 14px; z-index: 900;
   width: 48px; height: 48px; border-radius: 50%; background: var(--white);
   border: none; box-shadow: 0 2px 12px rgba(0,0,0,.2); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+  bottom: 200px; /* JSで動的に更新 */
+  transition: bottom .3s;
 }
 #fab-loc svg { width: 22px; height: 22px; fill: var(--green); }
 #fab-loc:active { background: var(--light); }
 
 /* ── LEGEND ──────────────────────────────────────────── */
 #legend {
-  position: absolute; top: 62px; right: 10px; z-index: 500;
-  background: var(--white); border-radius: 8px; padding: 8px 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12); font-size: 11px;
+  position: absolute; top: 10px; right: 10px; z-index: 500;
+  background: var(--white); border-radius: 8px; padding: 8px 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12); font-size: 10px;
 }
 .leg { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .leg:last-child { margin-bottom: 0; }
@@ -155,16 +157,25 @@ header {
 .ctag.st { background: #d4ede3; color: var(--dark); font-weight: 700; }
 .empty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.8; }
 
-/* ── STORE DETAIL DRAWER（下から出てくる） ───────────── */
+/* ── STORE DETAIL POPUP（ピンの横に表示） ────────────── */
 #drawer {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 1200;
-  background: var(--white); border-radius: 20px 20px 0 0;
-  box-shadow: 0 -8px 32px rgba(0,0,0,.18); padding: 0 20px 20px;
-  padding-bottom: calc(20px + var(--safe-bot));
-  transform: translateY(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
+  position: fixed; z-index: 1200;
+  background: var(--white); border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.22); padding: 14px 16px 16px;
+  width: min(300px, calc(100vw - 28px));
+  left: 14px; top: 50%;
+  transform: translateY(-50%) scale(0.9);
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s;
 }
-#drawer.open { transform: translateY(0); }
-.drw-handle { text-align: center; padding: 10px; }
+#drawer.open {
+  opacity: 1; pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+}
+#drawer::after {
+  content: none;
+}
+.drw-handle { display: none; }
 .drw-knob { width: 36px; height: 4px; background: #ddd; border-radius: 2px; display: inline-block; }
 .drw-name { font-size: 16px; font-weight: 700; color: var(--dark); margin-bottom: 3px; }
 .drw-pref { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
@@ -179,8 +190,8 @@ hr.dv { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .knob { width: 26px; height: 26px; background: var(--white); border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: left .25s; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
 .toggle.on .knob { left: 24px; }
 .drw-close {
-  width: 100%; margin-top: 16px; padding: 13px; background: #f0f0f0;
-  border: none; border-radius: 10px; font-size: 14px; color: var(--muted);
+  width: 100%; margin-top: 12px; padding: 10px; background: #f0f0f0;
+  border: none; border-radius: 8px; font-size: 13px; color: var(--muted);
   font-family: 'Noto Sans JP', sans-serif; cursor: pointer;
 }
 .drw-close:active { background: #e4e4e4; }
@@ -322,6 +333,8 @@ let selId   = null, filter = "all", query = "";
 const STAMPS = JSON.parse(localStorage.getItem("sbux_stamps_v2") || "{}");
 // マイストアパスポートから同期したスタンプID集合
 let syncedStampIds = new Set(JSON.parse(localStorage.getItem("sbux_synced_ids") || "[]"));
+// マイストアパスポートから同期したスタンプID集合
+let syncedStampIds = new Set(JSON.parse(localStorage.getItem("sbux_synced_ids") || "[]"));
 
 /* ── 地図初期化 ──────────────────────────────────────── */
 map = L.map("map", { zoomControl: false }).setView([35.6812, 139.7671], 12);
@@ -385,6 +398,7 @@ function processStores(data) {
 
   renderAll();
   toast(`${stores.length} 店舗を読み込みました`);
+  updateFabPos();
 }
 
 /* ── 位置情報 ─────────────────────────────────────────── */
@@ -447,6 +461,15 @@ function refreshIcon(s) {
   s.marker.setZIndexOffset(selected ? 1000 : 0);
 }
 
+/* ── FAB位置をボトムシートに追従させる ──────────────── */
+function updateFabPos() {
+  const sheet = document.getElementById("bottom-sheet");
+  const fab   = document.getElementById("fab-loc");
+  if (!fab) return;
+  const sheetH = sheet ? sheet.offsetHeight : 0;
+  fab.style.bottom = (sheetH + 14) + "px";
+}
+
 /* ── 店舗選択 ─────────────────────────────────────────── */
 function selectStore(id) {
   // 前の選択ピンを通常サイズに戻す
@@ -463,38 +486,65 @@ function selectStore(id) {
   s.marker.setIcon(divIcon(s.stamped, true));
   s.marker.setZIndexOffset(1000);
 
-  // マップエリア（ボトムシートを除いた領域）の中心にピンを移動
+  // マップエリアの中心（ボトムシートを除いた領域）にパン
   const zoom = Math.max(map.getZoom(), 15);
   map.setZoom(zoom);
+  const sheet   = document.getElementById("bottom-sheet");
   const mapWrap = document.getElementById("map-wrap");
-  const bottomSheet = document.getElementById("bottom-sheet");
-  const mapH = mapWrap ? mapWrap.offsetHeight : window.innerHeight;
-  const sheetH = bottomSheet ? bottomSheet.offsetHeight : 0;
-  const visibleH = mapH - sheetH;  // 見えているマップエリアの高さ
-  const centerY = visibleH / 2;    // 見えているエリアの中心Y
-  const mapCenterY = mapH / 2;     // マップ全体の中心Y
-  const offsetPx = mapCenterY - centerY;  // ずれ分
-  const targetPoint = map.project([s.lat, s.lng], zoom);
-  targetPoint.y -= offsetPx;
-  const targetLatLng = map.unproject(targetPoint, zoom);
-  map.panTo(targetLatLng, { animate: true, duration: 0.5 });
+  const sheetH  = sheet   ? sheet.offsetHeight   : 0;
+  const mapH    = mapWrap ? mapWrap.offsetHeight  : window.innerHeight;
+  const visH    = mapH - sheetH;
+  const offsetPx = (mapH / 2) - (visH / 2);
+  const pt = map.project([s.lat, s.lng], zoom);
+  pt.y -= offsetPx;
+  map.panTo(map.unproject(pt, zoom), { animate: true, duration: 0.4 });
 
+  // ポップアップの内容をセット
   document.getElementById("d-name").textContent  = s.name;
   document.getElementById("d-pref").textContent  = s.prefecture || "";
   document.getElementById("d-addr").textContent  = s.address || "住所情報なし";
   document.getElementById("d-dist").textContent  = s.dist != null ? `📍 現在地から約 ${fmtD(s.dist)}` : "";
   document.getElementById("d-hours").textContent = s.hours ? `🕐 ${s.hours}` : "";
-
   const tog = document.getElementById("d-tog");
   tog.className = "toggle" + (s.stamped ? " on" : "");
   document.getElementById("d-lbl").textContent = s.stamped ? "✅ スタンプ取得済み" : "スタンプ未取得";
+
+  // ポップアップをピンの画面座標の横に配置
+  positionPopup(s);
 
   document.getElementById("drawer").classList.add("open");
   renderList();
 }
 
+function positionPopup(s) {
+  const drawer = document.getElementById("drawer");
+  const mapWrap = document.getElementById("map-wrap");
+  if (!drawer || !mapWrap) return;
+
+  // パン後に座標を再取得するため少し遅延
+  setTimeout(() => {
+    const pt      = map.latLngToContainerPoint([s.lat, s.lng]);
+    const mapRect = mapWrap.getBoundingClientRect();
+    const popW    = drawer.offsetWidth  || 300;
+    const popH    = drawer.offsetHeight || 200;
+    const pinH    = 47; // 選択時のピン高さ
+
+    // ピンの上中央を基準にポップアップを配置
+    let left = mapRect.left + pt.x - popW / 2;
+    let top  = mapRect.top  + pt.y - pinH - popH - 8;
+
+    // 画面外にはみ出す場合は補正
+    const margin = 10;
+    left = Math.max(margin, Math.min(left, window.innerWidth  - popW - margin));
+    top  = Math.max(margin + 60, Math.min(top, window.innerHeight - popH - margin));
+
+    drawer.style.left      = left + "px";
+    drawer.style.top       = top  + "px";
+    drawer.style.transform = "scale(1)";
+  }, 450); // panToのアニメーション完了後
+}
+
 function closeDrawer() {
-  // 選択解除時にピンを通常サイズに戻す
   const prev = stores.find(x => x.id === selId);
   if (prev) {
     prev.marker.setIcon(divIcon(prev.stamped, false));
@@ -590,22 +640,20 @@ document.getElementById("fab-loc").addEventListener("click", () => {
   const goToPos = (pos) => {
     userPos = pos;
     placeMe(pos);
-    // マップエリア（ボトムシートを除いた領域）の中心に移動
+    const sheet   = document.getElementById("bottom-sheet");
     const mapWrap = document.getElementById("map-wrap");
-    const bottomSheet = document.getElementById("bottom-sheet");
-    const mapH = mapWrap ? mapWrap.offsetHeight : window.innerHeight;
-    const sheetH = bottomSheet ? bottomSheet.offsetHeight : 0;
-    const visibleH = mapH - sheetH;
-    const offsetPx = mapH / 2 - visibleH / 2;
+    const sheetH  = sheet   ? sheet.offsetHeight   : 0;
+    const mapH    = mapWrap ? mapWrap.offsetHeight  : window.innerHeight;
+    const visH    = mapH - sheetH;
+    const offsetPx = (mapH / 2) - (visH / 2);
     const zoom = map.getZoom();
-    const targetPoint = map.project([pos.lat, pos.lng], zoom);
-    targetPoint.y -= offsetPx;
-    map.panTo(map.unproject(targetPoint, zoom), { animate: true, duration: 0.5 });
+    const pt = map.project([pos.lat, pos.lng], zoom);
+    pt.y -= offsetPx;
+    map.panTo(map.unproject(pt, zoom), { animate: true });
     stores.forEach(s => { s.dist = hav(pos, { lat: s.lat, lng: s.lng }); });
     stores.sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
     renderAll();
   };
-
   if (userPos) { goToPos(userPos); return; }
   navigator.geolocation?.getCurrentPosition(
     p => goToPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
@@ -662,8 +710,53 @@ if (syncedStampIds.size > 0) {
   document.getElementById("sync-btn").textContent = `✅ ${syncedStampIds.size}店舗同期済み`;
 }
 
+/* ── stamps.json ファイル読み込み ──────────────────────── */
+document.getElementById("stamps-file").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      const ids = data.stamp_ids || [];
+      if (!ids.length) { toast("スタンプIDが見つかりませんでした"); return; }
+
+      // localStorageに保存
+      syncedStampIds = new Set(ids.map(String));
+      localStorage.setItem("sbux_synced_ids", JSON.stringify([...syncedStampIds]));
+
+      // 全店舗のstamped状態を更新
+      stores.forEach(s => {
+        const stamped = syncedStampIds.has(String(s.id));
+        s.stamped = stamped;
+        refreshIcon(s);
+      });
+
+      // 同期ボタンの見た目を変更
+      document.getElementById("sync-btn").classList.add("loaded");
+      document.getElementById("sync-btn").textContent = `✅ ${ids.length}店舗同期済み`;
+
+      renderAll();
+      toast(`✅ ${ids.length} 店舗のスタンプを同期しました（${data.updated?.slice(0,10) || ""}）`);
+    } catch (err) {
+      toast("stamps.json の読み込みに失敗しました");
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+  // 同じファイルを再選択できるようリセット
+  e.target.value = "";
+});
+
+// 起動時に同期済みデータがあればボタン表示を更新
+if (syncedStampIds.size > 0) {
+  document.getElementById("sync-btn").classList.add("loaded");
+  document.getElementById("sync-btn").textContent = `✅ ${syncedStampIds.size}店舗同期済み`;
+}
+
 document.getElementById("drw-close").addEventListener("click", closeDrawer);
 document.getElementById("d-tog").addEventListener("click", toggleStamp);
+window.addEventListener("resize", () => { updateFabPos(); });
 
 /* ── ユーティリティ ──────────────────────────────────── */
 function hav(a, b) {
