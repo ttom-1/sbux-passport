@@ -88,7 +88,7 @@ header {
 
 /* ── FAB（現在地ボタン）──────────────────────────────── */
 #fab-loc {
-  position: absolute; bottom: 180px; right: 14px; z-index: 500;
+  position: absolute; bottom: 220px; right: 14px; z-index: 500;
   width: 48px; height: 48px; border-radius: 50%; background: var(--white);
   border: none; box-shadow: 0 2px 12px rgba(0,0,0,.2); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -416,54 +416,66 @@ function pinSVG(stamped, selected) {
   const fill   = stamped ? "#00704A" : "#FFFFFF";
   const stroke = stamped ? "#004D31" : "#AAAAAA";
   const dot    = stamped ? "#FFFFFF" : "#CCCCCC";
-  const w = selected ? 36 : 26;
-  const h = selected ? 47 : 34;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 26 34">
+  const sw     = selected ? "2.5" : "1.5";
+  // selected時はCSSのtransformでスケールアップ（消えるバグを防ぐ）
+  const style  = selected ? 'style="transform:scale(1.5);transform-origin:13px 34px;"' : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34" ${style}>
     <path d="M13 1C7.48 1 3 5.48 3 11c0 8.5 10 22 10 22S23 19.5 23 11C23 5.48 18.52 1 13 1z"
-      fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
+      fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
     <circle cx="13" cy="11" r="4" fill="${dot}"/>
   </svg>`;
 }
 
 function divIcon(stamped, selected) {
-  const w = selected ? 36 : 26;
-  const h = selected ? 47 : 34;
-  const a = selected ? 18 : 13;
   return L.divIcon({
     html: pinSVG(stamped, selected), className: "",
-    iconSize: [w, h], iconAnchor: [a, h], tooltipAnchor: [0, -h],
+    iconSize: [26, 34], iconAnchor: [13, 34], tooltipAnchor: [0, -36],
   });
 }
 
 function makeMarker(s) {
-  const m = L.marker([s.lat, s.lng], { icon: divIcon(s.stamped, false) })
+  const m = L.marker([s.lat, s.lng], { icon: divIcon(s.stamped, false), zIndexOffset: 0 })
     .addTo(map)
     .bindTooltip(s.name, { direction: "top", offset: [0, -18], opacity: .9 });
   m.on("click", () => selectStore(s.id));
   return m;
 }
 
-function refreshIcon(s) { s.marker.setIcon(divIcon(s.stamped, s.id === selId)); }
+function refreshIcon(s) {
+  const selected = s.id === selId;
+  s.marker.setIcon(divIcon(s.stamped, selected));
+  s.marker.setZIndexOffset(selected ? 1000 : 0);
+}
 
 /* ── 店舗選択 ─────────────────────────────────────────── */
 function selectStore(id) {
   // 前の選択ピンを通常サイズに戻す
   const prev = stores.find(x => x.id === selId);
-  if (prev) refreshIcon(prev);
+  if (prev) {
+    prev.marker.setIcon(divIcon(prev.stamped, false));
+    prev.marker.setZIndexOffset(0);
+  }
 
   selId = id;
   const s = stores.find(x => x.id === id); if (!s) return;
 
-  // 選択されたピンを大きく表示
-  refreshIcon(s);
+  // 選択ピンを大きく表示
+  s.marker.setIcon(divIcon(s.stamped, true));
+  s.marker.setZIndexOffset(1000);
 
-  // ボトムシートの高さ分だけ上にオフセットして中央に表示
+  // マップエリア（ボトムシートを除いた領域）の中心にピンを移動
   const zoom = Math.max(map.getZoom(), 15);
   map.setZoom(zoom);
+  const mapWrap = document.getElementById("map-wrap");
+  const bottomSheet = document.getElementById("bottom-sheet");
+  const mapH = mapWrap ? mapWrap.offsetHeight : window.innerHeight;
+  const sheetH = bottomSheet ? bottomSheet.offsetHeight : 0;
+  const visibleH = mapH - sheetH;  // 見えているマップエリアの高さ
+  const centerY = visibleH / 2;    // 見えているエリアの中心Y
+  const mapCenterY = mapH / 2;     // マップ全体の中心Y
+  const offsetPx = mapCenterY - centerY;  // ずれ分
   const targetPoint = map.project([s.lat, s.lng], zoom);
-  const bottomSheetEl = document.getElementById("bottom-sheet");
-  const offset = bottomSheetEl ? bottomSheetEl.offsetHeight / 2 : 120;
-  targetPoint.y += offset;
+  targetPoint.y -= offsetPx;
   const targetLatLng = map.unproject(targetPoint, zoom);
   map.panTo(targetLatLng, { animate: true, duration: 0.5 });
 
@@ -484,8 +496,11 @@ function selectStore(id) {
 function closeDrawer() {
   // 選択解除時にピンを通常サイズに戻す
   const prev = stores.find(x => x.id === selId);
-  if (prev) { selId = null; refreshIcon(prev); }
-  else selId = null;
+  if (prev) {
+    prev.marker.setIcon(divIcon(prev.stamped, false));
+    prev.marker.setZIndexOffset(0);
+  }
+  selId = null;
   document.getElementById("drawer").classList.remove("open");
   renderList();
 }
@@ -572,15 +587,30 @@ function doSearch() {
 }
 
 document.getElementById("fab-loc").addEventListener("click", () => {
-  if (userPos) { map.setView([userPos.lat, userPos.lng], 15); return; }
-  navigator.geolocation?.getCurrentPosition(p => {
-    userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
-    placeMe(userPos);
-    map.setView([userPos.lat, userPos.lng], 15);
-    stores.forEach(s => { s.dist = hav(userPos, { lat: s.lat, lng: s.lng }); });
+  const goToPos = (pos) => {
+    userPos = pos;
+    placeMe(pos);
+    // マップエリア（ボトムシートを除いた領域）の中心に移動
+    const mapWrap = document.getElementById("map-wrap");
+    const bottomSheet = document.getElementById("bottom-sheet");
+    const mapH = mapWrap ? mapWrap.offsetHeight : window.innerHeight;
+    const sheetH = bottomSheet ? bottomSheet.offsetHeight : 0;
+    const visibleH = mapH - sheetH;
+    const offsetPx = mapH / 2 - visibleH / 2;
+    const zoom = map.getZoom();
+    const targetPoint = map.project([pos.lat, pos.lng], zoom);
+    targetPoint.y -= offsetPx;
+    map.panTo(map.unproject(targetPoint, zoom), { animate: true, duration: 0.5 });
+    stores.forEach(s => { s.dist = hav(pos, { lat: s.lat, lng: s.lng }); });
     stores.sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
     renderAll();
-  }, () => toast("位置情報を取得できませんでした"));
+  };
+
+  if (userPos) { goToPos(userPos); return; }
+  navigator.geolocation?.getCurrentPosition(
+    p => goToPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+    () => toast("位置情報を取得できませんでした")
+  );
 });
 
 document.querySelectorAll(".pill").forEach(p => p.addEventListener("click", () => {
