@@ -423,28 +423,47 @@ function pinSVG(stamped) {
   </svg>`;
 }
 
-function divIcon(stamped) {
+function divIcon(stamped, selected) {
+  const w = selected ? 36 : 26;
+  const h = selected ? 47 : 34;
+  const a = selected ? 18 : 13;
   return L.divIcon({
     html: pinSVG(stamped), className: "",
-    iconSize: [26, 34], iconAnchor: [13, 34], tooltipAnchor: [0, -36],
+    iconSize: [w, h], iconAnchor: [a, h], tooltipAnchor: [0, -h],
   });
 }
 
 function makeMarker(s) {
-  const m = L.marker([s.lat, s.lng], { icon: divIcon(s.stamped) })
+  const m = L.marker([s.lat, s.lng], { icon: divIcon(s.stamped, false) })
     .addTo(map)
     .bindTooltip(s.name, { direction: "top", offset: [0, -18], opacity: .9 });
   m.on("click", () => selectStore(s.id));
   return m;
 }
 
-function refreshIcon(s) { s.marker.setIcon(divIcon(s.stamped)); }
+function refreshIcon(s) { s.marker.setIcon(divIcon(s.stamped, s.id === selId)); }
 
 /* ── 店舗選択 ─────────────────────────────────────────── */
 function selectStore(id) {
+  // 前の選択ピンを通常サイズに戻す
+  const prev = stores.find(x => x.id === selId);
+  if (prev) refreshIcon(prev);
+
   selId = id;
   const s = stores.find(x => x.id === id); if (!s) return;
-  map.setView([s.lat, s.lng], Math.max(map.getZoom(), 15));
+
+  // 選択されたピンを大きく表示
+  refreshIcon(s);
+
+  // ボトムシートの高さ分だけ上にオフセットして中央に表示
+  const zoom = Math.max(map.getZoom(), 15);
+  map.setZoom(zoom);
+  const targetPoint = map.project([s.lat, s.lng], zoom);
+  const bottomSheetEl = document.getElementById("bottom-sheet");
+  const offset = bottomSheetEl ? bottomSheetEl.offsetHeight / 2 : 120;
+  targetPoint.y += offset;
+  const targetLatLng = map.unproject(targetPoint, zoom);
+  map.panTo(targetLatLng, { animate: true, duration: 0.5 });
 
   document.getElementById("d-name").textContent  = s.name;
   document.getElementById("d-pref").textContent  = s.prefecture || "";
@@ -461,8 +480,12 @@ function selectStore(id) {
 }
 
 function closeDrawer() {
+  // 選択解除時にピンを通常サイズに戻す
+  const prev = stores.find(x => x.id === selId);
+  if (prev) { selId = null; refreshIcon(prev); }
+  else selId = null;
   document.getElementById("drawer").classList.remove("open");
-  selId = null; renderList();
+  renderList();
 }
 
 function toggleStamp() {
