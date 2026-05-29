@@ -40,7 +40,7 @@ header{height:52px;background:var(--dark);display:flex;align-items:center;paddin
 #map-wrap{flex:1;position:relative;overflow:hidden}
 #map{width:100%;height:100%;z-index:1}
 .leaflet-control-attribution{font-size:9px!important}
-.leaflet-control-zoom{border:none!important;box-shadow:0 2px 8px rgba(0,0,0,.2)!important}
+.leaflet-bottom.leaflet-right{bottom:60px!important;right:8px!important}.leaflet-control-zoom{border:none!important;box-shadow:0 2px 8px rgba(0,0,0,.2)!important}
 .leaflet-control-zoom a{width:36px!important;height:36px!important;line-height:36px!important;font-size:20px!important}
 
 /* 検索バー */
@@ -49,14 +49,14 @@ header{height:52px;background:var(--dark);display:flex;align-items:center;paddin
 #s-go{padding:11px 16px;background:var(--green);color:var(--white);border:none;font-size:14px;cursor:pointer}
 
 /* 凡例（左下・縮尺ボタンの上） */
-#legend{position:absolute;left:8px;bottom:52px;z-index:500;background:var(--white);border-radius:8px;padding:7px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:10px}
+#legend{position:absolute;right:8px;top:62px;z-index:500;background:var(--white);border-radius:8px;padding:7px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:10px}
 .leg{display:flex;align-items:center;gap:5px;margin-bottom:3px}
 .leg:last-child{margin-bottom:0}
 .leg svg{width:11px;height:14px;display:block}
 .leg-me{width:9px;height:9px;border-radius:50%;background:#3B82F6;border:2px solid white;box-shadow:0 0 0 1.5px #3B82F6}
 
 /* FABボタン（右下・ボトムシートの上） */
-#fab-loc{position:absolute;right:14px;bottom:14px;z-index:600;width:46px;height:46px;border-radius:50%;background:var(--white);border:none;box-shadow:0 2px 12px rgba(0,0,0,.25);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#fab-loc{position:fixed;right:14px;bottom:80px;z-index:1500;width:46px;height:46px;border-radius:50%;background:var(--white);border:none;box-shadow:0 2px 12px rgba(0,0,0,.25);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:bottom .3s}
 #fab-loc svg{width:22px;height:22px;fill:var(--green)}
 #fab-loc:active{background:var(--light)}
 
@@ -249,6 +249,9 @@ function processStores(data) {
   else if (stores.length) map.setView([stores[0].lat, stores[0].lng], 12);
   renderAll();
   toast(stores.length + " 店舗を読み込みました");
+  // ボトムシートの高さ変化を監視してFAB位置を更新
+  new ResizeObserver(updateFabPos).observe(document.getElementById("bottom-sheet"));
+  updateFabPos();
 }
 
 /* 位置情報 */
@@ -292,7 +295,11 @@ function refreshIcon(s) {
 function updateFabPos() {
   const fab = document.getElementById("fab-loc");
   const sheet = document.getElementById("bottom-sheet");
-  if (fab && sheet) fab.style.bottom = (sheet.offsetHeight + 12) + "px";
+  if (!fab || !sheet) return;
+  // position:fixed なのでウィンドウ基準で下から計算
+  const sheetRect = sheet.getBoundingClientRect();
+  const fromBottom = window.innerHeight - sheetRect.top;
+  fab.style.bottom = (fromBottom + 12) + "px";
 }
 
 /* 店舗選択 */
@@ -335,16 +342,29 @@ function positionPopup(s) {
   const mapEl = document.getElementById("map-wrap");
   const sheet = document.getElementById("bottom-sheet");
   if (!popup || !mapEl) return;
-  const sheetH = sheet ? sheet.offsetHeight : 0;
-  const pt = map.latLngToContainerPoint([s.lat, s.lng]);
-  const popW = 240, popH = popup.offsetHeight || 150, pinH = 44, margin = 10;
+
+  const mapRect = mapEl.getBoundingClientRect();
+  const sheetH  = sheet ? sheet.offsetHeight : 0;
+  const visH    = mapRect.height - sheetH;  // 見えているマップ高さ
+  const pt      = map.latLngToContainerPoint([s.lat, s.lng]); // マップ内座標
+  const popW    = popup.offsetWidth  || 240;
+  const popH    = popup.offsetHeight || 160;
+  const pinH    = 44;
+  const margin  = 12;
+
+  // ピンの真上に配置（マップ内座標基準）
   let left = pt.x - popW / 2;
-  let top = pt.y - pinH - popH - 6;
+  let top  = pt.y - pinH - popH - 8;
+
+  // 左右が画面外に出る場合は補正
   left = Math.max(margin, Math.min(left, mapEl.offsetWidth - popW - margin));
-  if (top < margin + 60) top = pt.y + 10;
-  if (top + popH > mapEl.offsetHeight - sheetH - margin) top = pt.y - pinH - popH - 6;
+  // 上に出る場合はピンの下に表示
+  if (top < margin) top = pt.y + 12;
+  // ボトムシートに被る場合も上に戻す
+  if (top + popH > visH - margin) top = Math.max(margin, pt.y - pinH - popH - 8);
+
   popup.style.left = left + "px";
-  popup.style.top = top + "px";
+  popup.style.top  = top  + "px";
   popup.classList.add("open");
 }
 
