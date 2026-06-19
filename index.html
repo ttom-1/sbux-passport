@@ -336,8 +336,10 @@ function panToVisible(lat, lng) {
   const zoom = Math.max(map.getZoom(), 15);
   map.setZoom(zoom, {animate:false});
 
-  // ピンを見えているエリアの65%の位置（中心より下）に配置
-  const targetScreenY = visH * 0.65;
+  // ピンを「見えているエリアの下から120px」あたりに配置し、
+  // 上側にポップアップ表示用のスペースを確保する
+  const popupSpace = 200; // ポップアップ＋吹き出し分の想定スペース
+  const targetScreenY = Math.max(visH - 80, popupSpace);
   const centerScreenY = mapH / 2;
   const pt = map.project([lat,lng], zoom);
   pt.y -= (centerScreenY - targetScreenY);
@@ -349,16 +351,31 @@ function panToVisible(lat, lng) {
 function positionPopup(s) {
   const popup = document.getElementById("popup");
   const mapEl = document.getElementById("map-wrap");
+  const sheet = document.getElementById("bottom-sheet");
   if (!popup || !mapEl) return;
 
-  const pt   = map.latLngToContainerPoint([s.lat, s.lng]);
-  const popH = popup.offsetHeight || 160;
-  const pinH = 44;
-  const gap  = 10;
+  const sheetH = sheet ? sheet.offsetHeight : 0;
+  const visH   = mapEl.offsetHeight - sheetH; // ボトムシートに隠れない見えているマップ高さ
+  const pt     = map.latLngToContainerPoint([s.lat, s.lng]);
+  const popH   = popup.offsetHeight || 160;
+  const pinH   = 44;
+  const gap    = 10;
   const margin = 60;
 
   let top = pt.y - pinH - popH - gap;
-  if (top < margin) top = margin; // 画面上端を超えないよう保護
+
+  // 画面上端を超えないよう保護
+  if (top < margin) top = margin;
+
+  // ポップアップの下端がボトムシートの開始位置を超えないよう保護
+  // （超える場合はピンの直下に表示する）
+  if (top + popH > visH - 10) {
+    top = pt.y + pinH / 2 + gap;
+    // それでもボトムシートに被る場合は、見えているエリアの上部に固定表示
+    if (top + popH > visH - 10) {
+      top = Math.max(margin, visH - popH - 10);
+    }
+  }
 
   popup.style.top = top + "px";
   popup.classList.add("open");
