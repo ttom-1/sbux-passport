@@ -32,6 +32,21 @@ header{height:52px;background:var(--dark);display:flex;align-items:center;paddin
 .h-stamp em{font-style:normal;font-size:15px;font-weight:700;color:#6ee7b7}
 #sync-btn{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.3);border-radius:14px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
 #sync-btn.loaded{background:var(--green);border-color:var(--green)}
+#auto-sync-btn{display:flex;align-items:center;gap:4px;background:var(--gold);color:white;border:none;border-radius:14px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:'Noto Sans JP',sans-serif}
+#auto-sync-btn:active{opacity:.8}
+
+/* ログイン同期モーダル */
+#login-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:5000;display:none;align-items:center;justify-content:center}
+#login-modal.open{display:flex}
+#login-modal-inner{background:white;width:min(480px,94vw);height:min(680px,92vh);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+#login-modal-header{background:var(--dark);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+#login-modal-title{font-size:13px;font-weight:700}
+#login-modal-close{background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1;padding:0 4px}
+#login-modal-status{padding:8px 14px;font-size:11px;color:var(--muted);background:#f5f5f5;border-bottom:1px solid var(--border);flex-shrink:0;min-height:18px}
+#login-iframe{flex:1;border:none;width:100%}
+#login-fallback{padding:20px;text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+#login-fallback p{font-size:13px;color:var(--text);line-height:1.6}
+#open-tab-btn{padding:10px 18px;background:var(--green);color:white;border:none;border-radius:8px;font-size:13px;font-family:'Noto Sans JP',sans-serif;cursor:pointer}
 
 /* ROOT */
 #root{display:flex;flex-direction:column;height:calc(100dvh - 52px - var(--safe-top))}
@@ -138,12 +153,30 @@ header{height:52px;background:var(--dark);display:flex;align-items:center;paddin
   </div>
   <div class="h-right">
     <div class="h-stamp"><em id="hdr-n">0</em>/<span id="hdr-t">0</span></div>
+    <button id="auto-sync-btn" title="Starbucksにログインしてスタンプを自動取得">🔐 ログイン同期</button>
     <label id="sync-btn">
-      🔄 同期
+      🔄 ファイル
       <input type="file" id="stamps-file" accept=".json" style="display:none">
     </label>
   </div>
 </header>
+
+<!-- ログイン同期モーダル -->
+<div id="login-modal">
+  <div id="login-modal-inner">
+    <div id="login-modal-header">
+      <span id="login-modal-title">Starbucksにログイン</span>
+      <button id="login-modal-close">×</button>
+    </div>
+    <div id="login-modal-status"></div>
+    <iframe id="login-iframe" src="about:blank"></iframe>
+    <div id="login-fallback" style="display:none">
+      <p>このブラウザではStarbucksサイトを埋め込み表示できませんでした。</p>
+      <p>別タブで開いてログイン・スタンプ確認後、下のボタンから手動入力してください。</p>
+      <button id="open-tab-btn">別タブでマイストアパスポートを開く</button>
+    </div>
+  </div>
+</div>
 
 <div id="root">
   <div id="map-wrap">
@@ -501,6 +534,117 @@ if (syncedIds.size > 0) {
   const btn = document.getElementById("sync-btn");
   btn.classList.add("loaded");
   btn.firstChild.textContent = "✅ " + syncedIds.size + "店舗同期済み";
+}
+
+/* ── ログイン同期（iframe方式） ──────────────────────── */
+const LOGIN_URL    = "https://login.starbucks.co.jp/login";
+const PASSPORT_URL = "https://www.starbucks.co.jp/mystarbucks/mystore/";
+
+const loginModal   = document.getElementById("login-modal");
+const loginIframe  = document.getElementById("login-iframe");
+const loginStatus  = document.getElementById("login-modal-status");
+const loginFallback= document.getElementById("login-fallback");
+
+let frameBlockedTimer = null;
+let pollTimer = null;
+
+document.getElementById("auto-sync-btn").addEventListener("click", openLoginModal);
+document.getElementById("login-modal-close").addEventListener("click", closeLoginModal);
+document.getElementById("open-tab-btn").addEventListener("click", () => {
+  window.open(PASSPORT_URL, "_blank");
+});
+
+function openLoginModal() {
+  loginModal.classList.add("open");
+  loginFallback.style.display = "none";
+  loginIframe.style.display = "block";
+  loginStatus.textContent = "ログインページを読み込み中...";
+  loginIframe.src = LOGIN_URL;
+
+  // iframeがX-Frame-Optionsでブロックされた場合の検出
+  // (一定時間経ってもloadイベントが発火しない/中身が読めない場合フォールバック)
+  clearTimeout(frameBlockedTimer);
+  frameBlockedTimer = setTimeout(() => {
+    try {
+      // クロスオリジンでアクセス自体は例外にならないこともあるため
+      // contentDocument の取得を試みて失敗パターンを判定
+      const doc = loginIframe.contentWindow.document;
+      void doc; // アクセスできてもクロスオリジンなら通常は例外になる
+    } catch (e) {
+      // 想定内（クロスオリジン）。ブロックされているとは限らないので継続。
+    }
+  }, 3000);
+
+  loginIframe.onload = () => {
+    loginStatus.textContent = "ログインしてください（ログイン後、自動で進みます）";
+    startPolling();
+  };
+
+  loginIframe.onerror = () => {
+    showFallback();
+  };
+}
+
+function closeLoginModal() {
+  loginModal.classList.remove("open");
+  loginIframe.src = "about:blank";
+  clearInterval(pollTimer);
+  clearTimeout(frameBlockedTimer);
+}
+
+function showFallback() {
+  loginIframe.style.display = "none";
+  loginFallback.style.display = "flex";
+  loginStatus.textContent = "埋め込み表示がブロックされました";
+}
+
+function startPolling() {
+  clearInterval(pollTimer);
+  let attempts = 0;
+  pollTimer = setInterval(() => {
+    attempts++;
+    let url = "";
+    try {
+      url = loginIframe.contentWindow.location.href;
+    } catch (e) {
+      // クロスオリジンになった = Starbucksサイト側に遷移できている証拠（良い兆候）
+      url = "(cross-origin)";
+    }
+
+    // ログイン後、パスポートページへ誘導
+    if (attempts === 4) {
+      loginStatus.textContent = "ログイン中... ログイン完了後パスポートページへ移動します";
+      try { loginIframe.src = PASSPORT_URL; } catch (e) {}
+    }
+
+    // スタンプ取得を試みる（クロスオリジンなので直接アクセスはできないため、
+    // postMessageベースの取得を試みつつ、一定時間でフォールバックを案内）
+    if (attempts >= 10) {
+      clearInterval(pollTimer);
+      loginStatus.textContent = "自動取得がブロックされました。下の案内をご確認ください。";
+      showFallback();
+    }
+  }, 1500);
+}
+
+// iframe内からのpostMessageを受信（将来的にbookmarklet等で送信できるようにするためのフック）
+window.addEventListener("message", (event) => {
+  if (!event.data || typeof event.data !== "object") return;
+  if (event.data.type === "SBUX_STAMPS" && Array.isArray(event.data.stamp_ids)) {
+    applySyncedStamps(event.data.stamp_ids);
+    closeLoginModal();
+  }
+});
+
+function applySyncedStamps(ids) {
+  syncedIds = new Set(ids.map(String));
+  localStorage.setItem("sbux_synced_ids", JSON.stringify([...syncedIds]));
+  stores.forEach(s => { s.stamped = syncedIds.has(String(s.id)); refreshIcon(s); });
+  const btn = document.getElementById("sync-btn");
+  btn.classList.add("loaded");
+  btn.firstChild.textContent = "✅ " + ids.length + "店舗同期済み";
+  renderAll();
+  toast("✅ " + ids.length + " 店舗のスタンプを同期しました");
 }
 
 /* ユーティリティ */
