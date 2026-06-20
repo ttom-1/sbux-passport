@@ -327,19 +327,29 @@ function selectStore(id) {
 
 // ピンを「見えているマップエリアの下寄り」に配置し、
 // 上部にポップアップ表示用のスペースを確保する
-function panToVisible(lat, lng) {
+// 「見えているマップエリアの下端」を実際の描画位置から取得する
+// (offsetHeightの積算ではなく、ボトムシートの実際の画面上端を使うことで
+//  WebView環境でのビューポート計算のズレを回避する)
+function getVisibleMapBottom() {
   const sheet = document.getElementById("bottom-sheet");
   const mapEl = document.getElementById("map-wrap");
-  const sheetH = sheet ? sheet.offsetHeight : 0;
-  const mapH = mapEl ? mapEl.offsetHeight : window.innerHeight;
-  const visH = mapH - sheetH; // 見えているマップ高さ
+  if (!sheet || !mapEl) return window.innerHeight;
+  const sheetRect = sheet.getBoundingClientRect();
+  const mapRect   = mapEl.getBoundingClientRect();
+  // ボトムシートの上端 - マップエリアの上端 = マップ内での「見えている下端」
+  return sheetRect.top - mapRect.top;
+}
+
+function panToVisible(lat, lng) {
+  const mapEl = document.getElementById("map-wrap");
+  const mapH  = mapEl ? mapEl.getBoundingClientRect().height : window.innerHeight;
+  const visBottom = getVisibleMapBottom(); // 見えているマップ下端（マップ内座標）
   const zoom = Math.max(map.getZoom(), 15);
   map.setZoom(zoom, {animate:false});
 
-  // ピンを「見えているエリアの下から120px」あたりに配置し、
+  // ピンを「見えている下端から80px上」あたりに配置し、
   // 上側にポップアップ表示用のスペースを確保する
-  const popupSpace = 200; // ポップアップ＋吹き出し分の想定スペース
-  const targetScreenY = Math.max(visH - 80, popupSpace);
+  const targetScreenY = Math.max(visBottom - 80, 200);
   const centerScreenY = mapH / 2;
   const pt = map.project([lat,lng], zoom);
   pt.y -= (centerScreenY - targetScreenY);
@@ -351,15 +361,13 @@ function panToVisible(lat, lng) {
 function positionPopup(s) {
   const popup = document.getElementById("popup");
   const mapEl = document.getElementById("map-wrap");
-  const sheet = document.getElementById("bottom-sheet");
   if (!popup || !mapEl) return;
 
-  const sheetH = sheet ? sheet.offsetHeight : 0;
-  const visH   = mapEl.offsetHeight - sheetH; // ボトムシートに隠れない見えているマップ高さ
-  const pt     = map.latLngToContainerPoint([s.lat, s.lng]);
-  const popH   = popup.offsetHeight || 160;
-  const pinH   = 44;
-  const gap    = 10;
+  const visBottom = getVisibleMapBottom(); // 見えているマップ下端（マップ内座標）
+  const pt    = map.latLngToContainerPoint([s.lat, s.lng]);
+  const popH  = popup.offsetHeight || 160;
+  const pinH  = 44;
+  const gap   = 10;
   const margin = 60;
 
   let top = pt.y - pinH - popH - gap;
@@ -369,11 +377,11 @@ function positionPopup(s) {
 
   // ポップアップの下端がボトムシートの開始位置を超えないよう保護
   // （超える場合はピンの直下に表示する）
-  if (top + popH > visH - 10) {
+  if (top + popH > visBottom - 10) {
     top = pt.y + pinH / 2 + gap;
     // それでもボトムシートに被る場合は、見えているエリアの上部に固定表示
-    if (top + popH > visH - 10) {
-      top = Math.max(margin, visH - popH - 10);
+    if (top + popH > visBottom - 10) {
+      top = Math.max(margin, visBottom - popH - 10);
     }
   }
 
