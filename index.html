@@ -336,8 +336,20 @@ function getVisibleMapBottom() {
   if (!sheet || !mapEl) return window.innerHeight;
   const sheetRect = sheet.getBoundingClientRect();
   const mapRect   = mapEl.getBoundingClientRect();
-  // ボトムシートの上端 - マップエリアの上端 = マップ内での「見えている下端」
-  return sheetRect.top - mapRect.top;
+  const result = sheetRect.top - mapRect.top;
+  showDebug(`sheetTop=${sheetRect.top.toFixed(0)} mapTop=${mapRect.top.toFixed(0)} mapH=${mapRect.height.toFixed(0)} winH=${window.innerHeight} →visBottom=${result.toFixed(0)}`);
+  return result;
+}
+function showDebug(msg) {
+  showDebug.lastMsg = msg;
+  let el = document.getElementById("debug-panel");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "debug-panel";
+    el.style.cssText = "position:fixed;top:56px;left:4px;right:4px;background:rgba(255,0,0,.85);color:white;font-size:10px;padding:6px 8px;z-index:99999;border-radius:6px;font-family:monospace;white-space:pre-wrap;";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
 }
 
 function panToVisible(lat, lng) {
@@ -387,6 +399,7 @@ function positionPopup(s) {
 
   popup.style.top = top + "px";
   popup.classList.add("open");
+  showDebug(showDebug.lastMsg + ` | pt.y=${pt.y.toFixed(0)} popH=${popH} → top=${top.toFixed(0)}`);
 }
 
 function closePopupEl() {
